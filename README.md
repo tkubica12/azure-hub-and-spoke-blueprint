@@ -234,3 +234,23 @@ Remove-AzRoleAssignment -ObjectId 61895eee-e28b-428f-9b66-0cf0e6f5ce45 -RoleDefi
 ```
 
 Note using this method you can create JSON file for each assignment and track it in version control system such as Azure DevOps or GitHub Enterprise. Using this method you can track changes and colaborate. As next step you may consider defining Blueprints themselves using JSON objects and use CI/CD pipelines to deploy new Blueprints and assignments to projects. Also note there are APIs (or PowerShell commands) available for creation of subscriptions also so whole process can be completely automated if needed.
+
+## Usign Blueprints without fully desired-state resource provisioning
+Having ARM templates as part of Blueprint gives you maximum control and is fully based on desired state principles. But if you need to change networking setup such as adding subnet (eg. you need to add service that requires dedicated subnet with delegations such as Azure Databricks) there are things you need to keep in mind:
+- You can test solution with network team manualy changing configuration
+- But if solution is not ported back to Blueprint you will have issues next time you upgrade your Blueprint definition. ARM template will have only some subnets, but you have manually configured new ones so ARM will unsucessfully try to delete those making assignment to fail
+- Therefore after you test the solution you need to port it back to original ARM template, publish new version of Blueprint and upgrade assignment in your subscription so desired stat reflects your new needs
+
+While this gives you maximum control and consistency it may lead to less flexibility and need for having more Blueprints ready for different types of environments or parametrize ARM accordingly. If you are not ready to onboard to completely desired state management of spoke networking you may consider removing ARM template from Blueprint and configure networking outside of it (manualy via GUI, CLI or running template deployment from your machine). With that:
+- You need to use different methods to make sure network configuration is consistent, eg. storing ARM templates in version control system for each environment
+- You can switch to using system-managed identity which is easier, because now Blueprint does not need rights to configure VNET peering
+- You have more flexibility for network team to implement changes manually in individual subscriptions while still maintain locking mechanism and policy provisioning by Blueprints
+
+For matured customers with predictable production environments I would recommend to implement fully desired state based solution keeping ARM as part of Blueprint to achieve maximum consistency, security and prevent mistakes. For highly dynamic production environments with too much variety in types of subnet configurations I would use Blueprint just to implement locking and policies. As non-production environments are concerned I would split my recommendation to two different categories - connected to corporate network and disconnected. It boils down to following solution:
+- For standard production environments go with limited set of Blueprints for majority of use cases using completely desired state solution for consistency and security - for example:
+  - Standard Blueprint for running VM-based IaaS services and PaaS services delivered via Private Link
+  - Data analytics Blueprint with pre-configured subnets/delegations/NSGs/routes for Databricks, SQL Managed Instance etc.
+  - AKS Blueprint with larger subnets to accomodate for more IP space needed when using containers with AKS Advanced Networking
+- For unpredictable or somehow more exotic production environments keep flexibility of deploying resources manually while using Blueprint for policies and locking
+- For development environments with needs for connectivity to corporate network use Blueprints for policies and locking, but deploy networking outside of Blueprint for more flexibility. Also consider less strict policies - eg. you might still want to prevent untracked explosure to Internet (to avoid attackers using it as potential entrypoint to corporate network), but relax rules for data placement or PaaS services without Private Link (as no production data are in development environment)
+- For development environments with no needs for connectivity to corporate network consider not using Blueprint at all or just to provide some policies in audit mode only to let users freely innovate while still getting information about deployments not using your security best practices
