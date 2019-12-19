@@ -1,0 +1,43 @@
+{
+    "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": {
+            "/subscriptions/4fd63c38-a6be-4fb1-ac9e-ab1781af69ad/resourceGroups/hub-networking-rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/blueprintRobot": {}
+        }
+    },
+    "location": "westeurope",
+    "properties": {
+        "blueprintId": "/providers/Microsoft.Management/managementGroups/tomaskubica/providers/Microsoft.Blueprint/blueprints/enterprisePeeredSubscription/versions/v1",
+        "locks": {
+            "mode": "AllResourcesReadOnly",
+            "excludedPrincipals": [
+                "cefbbb71-11f6-4cdd-a046-a45bb304ab3c"
+            ]
+        },
+        "parameters": {
+            "allowedlocations_listOfAllowedLocations": {
+                "value": [
+                    "West Europe"
+                ]
+            },
+            "deployNetworking_projectPrefix": {
+                "value": "project1"
+            },
+            "deployNetworking_addressRange": {
+                "value": "10.1.0.0/16"
+            },
+            "deployNetworking_trustedSubnetRange": {
+                "value": "10.1.0.0/24"
+            },
+            "deployNetworking_untrustedSubnetRange": {
+                "value": "10.1.1.0/24"
+            },
+            "[Usergrouporapplicationname]:Owner_RoleAssignmentName": {
+                "value": [
+                    "26ef8ab4-e714-4c95-a079-bb1c06946a4d"
+                ]
+            }
+        },
+        "resourceGroups": {}
+    }
+}

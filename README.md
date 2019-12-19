@@ -3,17 +3,16 @@ This repo contains example Blueprint for hub-and-spoke topology with enterprise 
 
 - Project lead must be subscription Owner so he can manage access to members of his team and service principals
 - Azure Policies must be in place to enforce IT requirements such as:
-  - regional restrictions (eg. only West Europe where Express Route is build)
+  - regional restrictions (eg. only West Europe where Express Route is present)
   - enforce audit logging on services
   - enforce tagging structure
   - limit IaaS VMs to use only IT provided hardened images
   - forbid creation of certain resources such as public IP, Azure VPN, new VNETs
-- RBAC rule to assign project lead as Owner
 - Basic networking setup needs to be deployed (VNET, subnets, forced routing to firewall in hub subscription)
 - Project lead (Owner) must not be able to remove policies
 - Project lead (Owner) must not be able to modify networking setup
 
-## Setting-up hub subscription
+## Setting up hub subscription
 ARM template hubNetwork.json will setup simple example of hub VNET with subnets ready for firewall and other components. For purpose of this demo we are not going to deploy actual firewalls (purpose is Blueprint demo, not networking itself).
 
 ```powershell
@@ -22,12 +21,12 @@ New-AzResourceGroup -Name hub-networking-rg -Location westeurope
 New-AzResourceGroupDeployment -ResourceGroup hub-networking-rg -TemplateFile arm/hubNetwork.json
 ```
 
-## Preparing ARM template for scope
+## Preparing ARM template for spoke networking
 We need to create ARM template for spoke vnet and setup peering to hub network. 
 
 With that we can currently take two approaches to automation:
-- We can use nested deployment to also provision VNET peering, but that requires identity with access to both subscriptions. This means we will need to use user-managed identity and take care of its RBAC ourselves meaning adding this identity to spoke subscription as Owner before Blueprint assignment and removing it after (for security reasons).
-- We can use system-managed identity when Blueprint will automatically create identity, make it owner during provisioning and remove this RBAC after deployment automatically. Drawback is this identity does not have rights to our hub subscription so currently cannot automate deployment VNET peering.
+- We can use nested deployment to also provision VNET peering, but that requires identity with access to both subscriptions. This means we will need to use user-managed identity and take care of its RBAC ourselves meaning adding this identity to spoke subscription as Owner before Blueprint assignment and removing it afterwards (for security reasons).
+- We can use system-managed identity when Blueprint will automatically create identity, make it owner during provisioning and remove this RBAC after deployment automatically. Drawback is this identity does not have rights to our hub subscription so  cannot automate deployment of VNET peering.
 
 In order to properly configure all networking pieces we will use user-managed identity.
 
@@ -66,7 +65,7 @@ We now add artifacts into this resource group.
 
 ![](images/09.png)
 
-Note we plan to lock resources in this resource group so no one including subscription owner can modify those. Nevertheless should networking team need to do some temporary manual change, they can unassign blueprint to test things out. Therefore we will add networking team (Security Group in AAD) as Network Contributor (but note they are still not able to make changes as resource is locked).
+Note we plan to lock resources in this resource group so no one including subscription owner can modify those. We will add networkTeam (Security Group in AAD) as Network Contributor, but this is not giving them rights to modify resources because we plan to use lock (Deny Assignment). Note when assigning Blueprint via GUI you cannot specify exception for networking team, but later we will use PowerShell to achieve that.
 
 ![](images/10.png)
 
@@ -112,7 +111,7 @@ Store blueprintRobot GUID for later use.
 ```
 
 ## Assign and test behavior
-As we need to use user-managed identity we first need to temporarily give blueprintRobot identity Owner role on spoke subscription. Make sure you use ObjectId of blueprintRobot identity.
+As we need to use user-managed identity we first need to temporarily give blueprintRobot identity Owner role on spoke subscription. Make sure you use ObjectId of blueprintRobot identity gathered in previous step.
 
 ```powershell
 Set-AzContext -Subscription mojesub2
@@ -151,7 +150,9 @@ We can check VNET peering is configured and in connected state.
 
 ![](images/23.png)
 
-Note networkTeam has beed added to networking-rg, but since resources are locked, they cannot modify settings. Nevertheless they are able to check configurations and do troubleshooting. Should they need to modify settings we need to modify Blueprint, create new version and update assignment. When temporary changes are needed eg. for troubleshooting purposes we can unassign Blueprint and networkTeam can do changes for testing. After correct setup is found, we would create new version of blueprint and assign it back to spoke subscription.
+Note networkTeam has beed added to networking-rg, but since resources are locked, they by default cannot modify settings. Nevertheless they are able to check configurations and do troubleshooting. Should they need to modify settings there are two options:
+- Undeploy Blueprint to remove lock so network team can do manual changes. After figuring things out you should make changes part of ARM template, modify Blueprint by publishing new version and assign this new version to subscription.
+- You can assign network administrators as exception in Deny Statement so resources are not locked for them. Note this is currently not possible when assigning Blueprint via GUI, you need to use PowerShell (or API) as outlined later.
 
 ![](images/24.png)
 
@@ -159,7 +160,7 @@ Let's have a look on Deny Assignments.
 
 ![](images/25.png)
 
-Note resource is locked so nobody including Owner of subscription can modify resources in this resource group except for blueprintRobot. Later on we will remove blueprintRobot as subscription Owner so even this account cannot do any modifications.
+Note resource is locked so nobody including Owner of subscription can modify resources in this resource group except for blueprintRobot. Later on we will remove blueprintRobot as subscription Owner so even this account cannot do any modifications. Later we will use PowerShell to assign Blueprint which allows for adding more identities to exceptions of Deny Assignment (lock) so we can let networking team modify settings after Blueprint assignment without need to unassign it.
 
 ![](images/26.png)
 
@@ -188,3 +189,48 @@ When adding other subscriptions follow the same procedure:
 3. Remove blueprintRobot Owner role
 
 Note identity blueprintRobot will be kept for all subsequent operations/subscriptions, but will be Owner of subscription just during blueprint assignment.
+
+## Automating assignment with PowerShell and setting exceptions on locked resources
+So far we needed to modify RBAC, use GUI to deploy Blueprint and then modify RBAC again. We can automate this procedure using PowerShell. In order to test this, remove previous blueprint assignment on subscription.
+
+First make sure Az.Blueprint PowerShell module is installed.
+
+```powershell
+Install-Module -Name Az.Blueprint
+```
+
+Next modify file blueprint-project1.json with the following:
+- put ID of your user-managed identity (blueprintRobot in our case)
+- blueprint ID
+- specify Principal ID of project lead
+- put networkTeam security group object ID to exceptions
+
+You can gather those using PowerShell.
+
+```powershell
+# blueprintRobot ID
+(Get-AzUserAssignedIdentity -Name blueprintRobot -ResourceGroupName hub-networking-rg).Id
+
+# Blueprint ID
+(Get-AzBlueprint -ManagementGroupId tomaskubica -Name enterprisePeeredSubscription -Version v1).Id
+```
+
+Now let's deploy Blueprint.
+
+```powershell
+# Assign blueprintRobot as Owner in spoke subscription
+Set-AzContext -Subscription mojesub2
+New-AzRoleAssignment -ObjectId 61895eee-e28b-428f-9b66-0cf0e6f5ce45 -RoleDefinitionName "Owner"
+
+# Assign Blueprint
+Set-AzContext -Subscription mojesub
+New-AzBlueprintAssignment -Name 'project1-blueprint-assignment' `
+    -SubscriptionId '52835e25-3a32-4eb3-8e03-4851cdc189c9' `
+    -AssignmentFile '.\blueprint-project1.json'
+
+# Remove blueprintRobot as Owner in spoke subscription
+Set-AzContext -Subscription mojesub2
+Remove-AzRoleAssignment -ObjectId 61895eee-e28b-428f-9b66-0cf0e6f5ce45 -RoleDefinitionName "Owner"
+```
+
+Note using this method you can create JSON file for each assignment and track it in version control system such as Azure DevOps or GitHub Enterprise. Using this method you can track changes and colaborate. As next step you may consider defining Blueprints themselves using JSON objects and use CI/CD pipelines to deploy new Blueprints and assignments to projects. Also note there are APIs (or PowerShell commands) available for creation of subscriptions also so whole process can be completely automated if needed.
