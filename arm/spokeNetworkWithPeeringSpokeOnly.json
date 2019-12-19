@@ -1,0 +1,103 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectPrefix": {
+            "type": "string"
+        },
+        "addressRange": {
+            "type": "string"
+        },
+        "trustedSubnetRange": {
+            "type": "string"
+        },
+        "untrustedSubnetRange": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "routeTableName": "routeToHub",
+        "firewallIp": "10.0.0.100",
+        "hubVnetId": "[concat('/subscriptions/', variables('hubSubscriptionId'), '/resourceGroups/', variables('hubVnetResourceGroupName'), '/providers/Microsoft.Network/virtualNetworks/', variables('hubVnetName'))]",
+        "hubVnetName": "hub-net",
+        "hubSubscriptionId": "4fd63c38-a6be-4fb1-ac9e-ab1781af69ad",
+        "hubVnetResourceGroupName": "hub-networking-rg",
+        "spokeVnetName": "[concat(parameters('projectPrefix'), '-vnet')]",
+        "spokeVnetId": "[resourceId('Microsoft.Network/virtualNetworks', variables('spokeVnetName'))]"
+    },
+    "resources": [
+        {
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2015-06-15",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/routeTables', variables('routeTableName'))]"
+            ],
+            "name": "[variables('spokeVnetName')]",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "[parameters('addressRange')]"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "trusted-subnet",
+                        "properties": {
+                            "addressPrefix": "[parameters('trustedSubnetRange')]",
+                            "routeTable": {
+                                "id": "[resourceId('Microsoft.Network/routeTables', variables('routeTableName'))]"
+                            }
+                        }
+                    },
+                    {
+                        "name": "untrusted-subnet",
+                        "properties": {
+                            "addressPrefix": "[parameters('untrustedSubnetRange')]",
+                            "routeTable": {
+                                "id": "[resourceId('Microsoft.Network/routeTables', variables('routeTableName'))]"
+                            }
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/routeTables",
+            "name": "[variables('routeTableName')]",
+            "apiVersion": "2018-02-01",
+            "location": "[resourceGroup().location]",
+            "properties": {
+                "disableBgpRoutePropagation": false,
+                "routes": [
+                    {
+                        "name": "defaultToSpokeFw",
+                        "properties": {
+                            "addressPrefix": "0.0.0.0/0",
+                            "nextHopType": "VirtualAppliance",
+                            "nextHopIpAddress": "[variables('firewallIp')]"
+                        }
+                    }
+                ]
+            }
+        },
+        {
+            "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+            "name": "[concat(variables('spokeVnetName'), '/peerToHub')]",
+            "apiVersion": "2018-08-01",
+            "dependsOn": [
+                "[resourceId('Microsoft.Network/virtualNetworks', variables('spokeVnetName'))]"
+            ],
+            "properties": {
+                "allowVirtualNetworkAccess": true,
+                "allowForwardedTraffic": true,
+                "allowGatewayTransit": false,
+                "useRemoteGateways": false,
+                "remoteVirtualNetwork": {
+                    "id": "[variables('hubVnetId')]"
+                }
+            }
+        }
+    ],
+    "outputs": {}
+}

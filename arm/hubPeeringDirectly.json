@@ -1,0 +1,37 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "projectPrefix": {
+            "type": "string"
+        },
+        "spokeSubscriptionId": {
+            "type": "string"
+        }
+    },
+    "variables": {
+        "spokeVnetId": "[concat('/subscriptions/', parameters('spokeSubscriptionId'), '/resourceGroups/', variables('spokeNetworkingRg'), '/providers/Microsoft.Network/virtualNetworks/', variables('spokeVnetName'))]",
+        "spokeNetworkingRg": "networking-rg",
+        "spokeVnetName": "[concat(parameters('projectPrefix'), '-vnet')]",
+        "hubVnetName": "hub-net"
+    },
+
+    "resources": [
+        {
+            "type": "Microsoft.Network/virtualNetworks/virtualNetworkPeerings",
+            "name": "[concat(variables('hubVnetName'), concat('/peerTo-', variables('spokeVnetName')))]",
+            "apiVersion": "2018-08-01",
+            "properties": {
+                "allowVirtualNetworkAccess": true,
+                "allowForwardedTraffic": true,
+                "allowGatewayTransit": false,
+                "useRemoteGateways": false,
+                "remoteVirtualNetwork": {
+                    "id": "[variables('spokeVnetId')]"
+                }
+            }
+        }
+    ],
+    "outputs": {
+    }
+}

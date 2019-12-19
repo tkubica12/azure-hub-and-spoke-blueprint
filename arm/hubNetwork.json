@@ -1,0 +1,59 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+    },
+    "variables": {
+        "vnetName": "hub-net",
+        "location": "[resourceGroup().location]",
+    },
+    "resources": [
+        {
+            "name": "[variables('vnetName')]",
+            "type": "Microsoft.Network/virtualNetworks",
+            "apiVersion": "2017-10-01",
+            "location": "[variables('location')]",
+            "properties": {
+                "addressSpace": {
+                    "addressPrefixes": [
+                        "10.0.0.0/16"
+                    ]
+                },
+                "subnets": [
+                    {
+                        "name": "fw-int",
+                        "properties": {
+                            "addressPrefix": "10.0.0.0/24"
+                        }
+                    },
+                    {
+                        "name": "fw-ext",
+                        "properties": {
+                            "addressPrefix": "10.0.1.0/24"
+                        }
+                    },
+                    {
+                        "name": "dmz",
+                        "properties": {
+                            "addressPrefix": "10.0.2.0/24"
+                        }
+                    },
+                    {
+                        "name": "services",
+                        "properties": {
+                            "addressPrefix": "10.0.3.0/24"
+                        }
+                    },
+                    {
+                        "name": "GatewaySubnet",
+                        "properties": {
+                            "addressPrefix": "10.0.4.0/24"
+                        }
+                    }
+                ]
+            }
+        }
+    ],
+    "outputs": {
+    }
+}
